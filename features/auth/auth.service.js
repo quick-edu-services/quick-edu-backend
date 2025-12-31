@@ -5,6 +5,15 @@ import nodemailer from "nodemailer";
 import User from "./auth.schema.js";
 import messages from "../../utils/messages.js";
 
+// Initialize transporter once
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.APP_EMAIL,
+    pass: process.env.APP_PASSWORD
+  }
+});
+
 export const signup = async (payload) => {
   const exists = await User.findOne({ email: payload.email });
   if (exists) throw messages.USER_EXISTS;
@@ -41,8 +50,8 @@ export const forgotPassword = async (payload) => {
   // Generate 6 digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  // Hash the OTP before saving
-  user.resetPasswordToken = await bcrypt.hash(otp, 10);
+  // Hash the OTP with minimum rounds (fastest for limited hardware like Render free tier)
+  user.resetPasswordToken = await bcrypt.hash(otp, 4);
   user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   await user.save();
@@ -50,34 +59,22 @@ export const forgotPassword = async (payload) => {
   const message = `
     <h1>Password Reset Request</h1>
     <p>Your OTP for password reset is:</p>
-    <h2>${otp}</h2>
+    <h2 style="color: #4F46E5; font-size: 32px; letter-spacing: 5px;">${otp}</h2>
     <p>This OTP will expire in 10 minutes.</p>
+    <p>If you didn't request this, please ignore this email.</p>
   `;
 
-  try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.APP_EMAIL,
-        pass: process.env.APP_PASSWORD
-      }
-    });
+  // Send email asynchronously - don't await to speed up the API response
+  transporter.sendMail({
+    from: `"Quick Edu Support" <${process.env.APP_EMAIL}>`,
+    to: user.email,
+    subject: 'Password Reset OTP',
+    html: message
+  }).catch(err => {
+    console.error("Delayed Email send error:", err);
+  });
 
-    await transporter.sendMail({
-      from: `Quick Edu Support <${process.env.APP_EMAIL}>`,
-      to: user.email,
-      subject: 'Password Reset OTP',
-      html: message
-    });
-
-    return { message: "OTP sent successfully" };
-  } catch (err) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
-    await user.save();
-    console.error("Email send error:", err);
-    throw new Error("Email could not be sent");
-  }
+  return { message: "OTP sent successfully" };
 };
 
 export const resetPassword = async (payload) => {
