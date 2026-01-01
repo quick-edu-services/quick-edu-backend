@@ -5,12 +5,26 @@ import nodemailer from "nodemailer";
 import User from "./auth.schema.js";
 import messages from "../../utils/messages.js";
 
-// Initialize transporter once
+// Initialize transporter with improved configuration
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // Use SSL/TLS
+  pool: true,   // Use connection pooling for better performance
+  maxConnections: 5,
+  maxMessages: 100,
   auth: {
     user: process.env.APP_EMAIL,
     pass: process.env.APP_PASSWORD
+  }
+});
+
+// Verify connection configuration
+transporter.verify(function (error, success) {
+  if (error) {
+    console.error("Transporter configuration error:", error);
+  } else {
+    console.log("Mail server is ready to take our messages");
   }
 });
 
@@ -64,14 +78,16 @@ export const forgotPassword = async (payload) => {
     <p>If you didn't request this, please ignore this email.</p>
   `;
 
-  // Send email asynchronously - don't await to speed up the API response
+  // Send email asynchronously
   transporter.sendMail({
     from: `"Quick Edu Support" <${process.env.APP_EMAIL}>`,
     to: user.email,
     subject: 'Password Reset OTP',
     html: message
+  }).then(info => {
+    console.log(`OTP Email sent successfully to ${user.email}. MessageId: ${info.messageId}`);
   }).catch(err => {
-    console.error("Delayed Email send error:", err);
+    console.error("Critical: OTP Email delivery failed:", err);
   });
 
   return { message: "OTP sent successfully" };
